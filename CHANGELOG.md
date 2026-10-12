@@ -8,6 +8,8 @@ commit it was tested against.
 
 ## Unreleased
 
+- Examples: `sandbox-run` CLI and `codeinterp` service with a hostile test suite and a smoke script.
+
 - Telemetry consent flow: `TelemetryNeedsConsentPrompt` and `RequestConsent` with a
   panic-safe presenter callback.
 - A finalizer reclaims a `Process` that is dropped without `Close`.

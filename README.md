@@ -104,6 +104,13 @@ slice sends an explicitly empty environment.
   `cidr`, ...) are enforced by MXC natively and surface as a `malformed_request`
   or `policy_validation` error rather than being duplicated here.
 
+## Examples
+
+[`examples/`](examples) has a `firejail`-style CLI (`sandbox-run`) and a
+code-interpreter HTTP service (`codeinterp`) with a hostile-snippet test suite
+that attacks the sandbox (secret reads, symlink escapes, network exfiltration,
+fork storms, output floods) and checks every attack fails.
+
 ## Platform support
 
 | Platform | Backend | Status |
