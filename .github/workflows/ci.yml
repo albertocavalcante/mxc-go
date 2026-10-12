@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    # macOS exercises a real Seatbelt sandbox. Linux builds and runs the suite,
+    # but sandbox tests skip when the runner lacks user namespaces.
+    continue-on-error: ${{ matrix.os != 'macos-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+
+      - id: ref
+        run: echo "ref=$(cat MXC_REF)" >> "$GITHUB_OUTPUT"
+
+      - name: cache native library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .mxc
+          key: mxc-${{ runner.os }}-${{ runner.arch }}-${{ steps.ref.outputs.ref }}
+
+      - name: build libmxc_ffi
+        run: just native
+
+      - name: ci gate
+        run: just ci

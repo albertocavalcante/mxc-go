@@ -1,0 +1,37 @@
+name: conventional commits
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate commit subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: validate Conventional Commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r subject; do
+            case "$subject" in
+              Merge\ *|Revert\ *|fixup!\ *|squash!\ *) continue ;;
+            esac
+            printf '%s\n' "$subject" |
+              grep -Eq '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9._/-]+\))?!?: .+' || {
+                printf 'invalid commit subject: %s\n' "$subject" >&2; bad=1; continue; }
+            [ "${#subject}" -le 72 ] || { printf 'subject exceeds 72 characters: %s\n' "$subject" >&2; bad=1; }
+          done < <(git log --format=%s "$BASE_SHA..$HEAD_SHA")
+          exit "$bad"
