@@ -2,6 +2,8 @@ package mxc
 
 import (
 	"context"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -44,6 +46,9 @@ func TestContract_AllSectionsParse(t *testing.T) {
 	}
 	for name, mut := range cases {
 		t.Run(name, func(t *testing.T) {
+			if strings.Contains(name, "seatbelt") && runtime.GOOS != "darwin" {
+				t.Skip("Seatbelt sections and containment are macOS only")
+			}
 			req := sh("echo ok")
 			mut(&req)
 			res, err := Run(context.Background(), req)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand/v2"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -18,7 +19,8 @@ func randomRequest(r *rand.Rand) Request {
 	boolp := func() *bool { return Bool(maybe()) }
 
 	req := Request{Process: Workload{CommandLine: "true"}}
-	if maybe() {
+	onMac := runtime.GOOS == "darwin"
+	if onMac && maybe() {
 		req.Containment = ContainmentSeatbelt
 	}
 	if maybe() {
@@ -69,7 +71,9 @@ func randomRequest(r *rand.Rand) Request {
 	if maybe() {
 		req.Telemetry = &Telemetry{Enabled: false}
 	}
-	if maybe() {
+	// A backend section must match the selected containment, which is a
+	// cross-field rule MXC enforces. Seatbelt is only selectable on macOS.
+	if onMac && maybe() {
 		req.Seatbelt = &Seatbelt{GUIAccess: boolp(), KeychainAccess: boolp(), NestedPTY: boolp()}
 	}
 	if maybe() {
