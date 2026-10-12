@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,6 +72,10 @@ func resultFrom(r ffi.RunResult) (*Result, error) {
 
 // Run executes the request to completion and captures its output.
 //
+// Captured output is decoded lossily by the native layer: invalid UTF-8 and NUL
+// bytes become U+FFFD. Use [Spawn] and read the pipes for raw bytes. ExitCode is
+// -1 when the workload did not exit normally (timeout, or killed by a signal).
+//
 // A non-zero workload exit code is not an error; inspect Result.ExitCode. If
 // ctx can be canceled, the workload is killed on cancellation and ctx.Err() is
 // returned; otherwise the native one-shot call is used directly.
@@ -84,6 +90,9 @@ func Run(ctx context.Context, req Request, opts ...Option) (*Result, error) {
 // RunJSON is Run for a caller-supplied exact-version MXC request JSON document
 // (any registered version, e.g. "1.1.0-alpha").
 func RunJSON(ctx context.Context, requestJSON string, opts ...Option) (*Result, error) {
+	if err := checkJSON(requestJSON); err != nil {
+		return nil, err
+	}
 	o := apply(opts)
 	if ctx.Done() == nil {
 		return resultFrom(ffi.RunJSON(requestJSON, o.experimental))
@@ -91,7 +100,7 @@ func RunJSON(ctx context.Context, requestJSON string, opts ...Option) (*Result, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	p, err := spawnJSON(requestJSON, o)
+	p, err := spawnJSON(ctx, requestJSON, o)
 	if err != nil {
 		return nil, err
 	}
@@ -110,10 +119,13 @@ func Spawn(ctx context.Context, req Request, opts ...Option) (*Process, error) {
 
 // SpawnJSON is Spawn for a caller-supplied request JSON document.
 func SpawnJSON(ctx context.Context, requestJSON string, opts ...Option) (*Process, error) {
+	if err := checkJSON(requestJSON); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return spawnJSON(requestJSON, apply(opts))
+	return spawnJSON(ctx, requestJSON, apply(opts))
 }
 
 // SpawnPTY starts the workload attached to an MXC-owned pseudo-terminal.
@@ -131,15 +143,15 @@ func SpawnPTY(ctx context.Context, req Request, opts ...Option) (*Process, error
 	if sb == nil {
 		return nil, newError(st, d)
 	}
-	return newProcess(sb), nil
+	return newProcess(ctx, sb), nil
 }
 
-func spawnJSON(js string, o options) (*Process, error) {
+func spawnJSON(ctx context.Context, js string, o options) (*Process, error) {
 	sb, st, d := ffi.Spawn(js, o.experimental)
 	if sb == nil {
 		return nil, newError(st, d)
 	}
-	return newProcess(sb), nil
+	return newProcess(ctx, sb), nil
 }
 
 // Process is a live sandboxed process. Methods are safe for concurrent use,
@@ -150,14 +162,15 @@ type Process struct {
 	sb     *ffi.Sandbox
 	done   *Result // set once the exit has been observed
 	closed bool
+	stop   chan struct{} // closed by Close; releases the context watcher
 
 	stdin  *stdinPipe
 	stdout *readPipe
 	stderr *readPipe
 }
 
-func newProcess(sb *ffi.Sandbox) *Process {
-	p := &Process{sb: sb}
+func newProcess(ctx context.Context, sb *ffi.Sandbox) *Process {
+	p := &Process{sb: sb, stop: make(chan struct{})}
 	if w := sb.TakeStdin(); w != nil {
 		p.stdin = &stdinPipe{w: w}
 	}
@@ -166,6 +179,18 @@ func newProcess(sb *ffi.Sandbox) *Process {
 	}
 	if r := sb.TakeStderr(); r != nil {
 		p.stderr = &readPipe{r: r, c: sb.StderrCloser()}
+	}
+	// Safety net for callers that forget Close; Close remains the contract.
+	runtime.SetFinalizer(p, func(p *Process) { _ = p.Close() })
+	// Like exec.CommandContext: canceling ctx kills the process.
+	if ctx.Done() != nil {
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = p.Kill()
+			case <-p.stop:
+			}
+		}()
 	}
 	return p
 }
@@ -251,7 +276,8 @@ func (p *Process) tryWait() (res *Result, done bool, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.done != nil {
-		return p.done, true, nil
+		cp := *p.done
+		return &cp, true, nil
 	}
 	if p.closed {
 		return nil, false, errClosed
@@ -264,7 +290,8 @@ func (p *Process) tryWait() (res *Result, done bool, err error) {
 		return nil, false, nil
 	}
 	p.done = &Result{ExitCode: exit, TimedOut: timedOut}
-	return p.done, true, nil
+	cp := *p.done
+	return &cp, true, nil
 }
 
 // Wait blocks until the process exits and returns its exit status (Stdout and
@@ -306,12 +333,17 @@ func (p *Process) Wait(ctx context.Context) (*Result, error) {
 // Output drains stdout and stderr concurrently, waits for exit, and returns
 // everything captured. It must not be combined with manual reads of the streams.
 func (p *Process) Output(ctx context.Context) (*Result, error) {
+	// Nothing is supplied on stdin here; close it so children such as `cat`
+	// see EOF instead of waiting forever.
+	if p.stdin != nil {
+		_ = p.stdin.Close()
+	}
+	var out, errb lockedBuf
 	var wg sync.WaitGroup
-	var out, errb []byte
-	drain := func(r io.Reader, dst *[]byte) {
+	drain := func(r io.Reader, dst *lockedBuf) {
 		defer wg.Done()
 		if r != nil {
-			*dst, _ = io.ReadAll(r)
+			_, _ = io.Copy(dst, r)
 		}
 	}
 	var so, se io.Reader
@@ -332,9 +364,22 @@ func (p *Process) Output(ctx context.Context) (*Result, error) {
 		wg.Wait()
 		return nil, err
 	}
-	wg.Wait()
+	// The child has exited, but a grandchild may still hold the pipes open.
+	// Give the readers a short grace to drain, bounded by ctx.
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	grace := time.NewTimer(drainGrace)
+	defer grace.Stop()
+	select {
+	case <-drained:
+	case <-grace.C:
+		go p.closeStreams() // may block behind a Read; never wait on it
+	case <-ctx.Done():
+		go p.closeStreams()
+		return nil, ctx.Err()
+	}
 	full := *res
-	full.Stdout, full.Stderr = out, errb
+	full.Stdout, full.Stderr = out.bytes(), errb.bytes()
 	full.Warnings = p.Warnings()
 	p.mu.Lock()
 	if !p.closed {
@@ -345,6 +390,30 @@ func (p *Process) Output(ctx context.Context) (*Result, error) {
 	p.mu.Unlock()
 	return &full, nil
 }
+
+// lockedBuf is a bytes sink that can be snapshotted while a reader is still
+// appending to it.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	l.b = append(l.b, p...)
+	l.mu.Unlock()
+	return len(p), nil
+}
+
+func (l *lockedBuf) bytes() []byte {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]byte(nil), l.b...)
+}
+
+// drainGrace bounds how long Output waits for stdout/stderr to reach EOF after
+// the child has exited (a surviving grandchild may keep the pipes open).
+const drainGrace = 500 * time.Millisecond
 
 func (p *Process) closeStreams() {
 	if p.stdin != nil {
@@ -361,6 +430,13 @@ func (p *Process) closeStreams() {
 // Close releases the process. If it is still running its tree is killed.
 // Safe to call more than once.
 func (p *Process) Close() error {
+	// Kill first: this unblocks any in-flight stream Read/Write (including
+	// readers with no native closer) so closeStreams cannot hang behind them.
+	p.mu.Lock()
+	if !p.closed {
+		_ = p.sb.Kill()
+	}
+	p.mu.Unlock()
 	p.closeStreams()
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -452,6 +528,15 @@ func (sp *stdinPipe) Close() error {
 	if sp.w != nil {
 		sp.w.Free()
 		sp.w = nil
+	}
+	return nil
+}
+
+// checkJSON rejects a document the C boundary would silently truncate at a NUL
+// byte, which could otherwise run a different request than the caller wrote.
+func checkJSON(js string) error {
+	if strings.IndexByte(js, 0) >= 0 {
+		return &Error{Code: CodeMalformedRequest, Message: "request JSON contains a NUL byte"}
 	}
 	return nil
 }

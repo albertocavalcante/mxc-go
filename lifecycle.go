@@ -57,6 +57,16 @@ func lifecycleEnvelope(phase string, id ContainerID, body any, extra map[string]
 	for k, v := range extra {
 		m[k] = v
 	}
+	// Reserved envelope keys always win over body/extra.
+	var hm map[string]json.RawMessage
+	_ = json.Unmarshal(hdr, &hm)
+	for _, k := range []string{"version", "phase", "sandboxId"} {
+		if v, ok := hm[k]; ok {
+			m[k] = v
+		} else {
+			delete(m, k)
+		}
+	}
 	b, err := json.Marshal(m)
 	return string(b), err
 }
@@ -157,5 +167,5 @@ func SpawnExec(ctx context.Context, id ContainerID, req ExecRequest, opts ...Opt
 	if sb == nil {
 		return nil, newError(st, d)
 	}
-	return newProcess(sb), nil
+	return newProcess(ctx, sb), nil
 }
