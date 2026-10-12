@@ -152,7 +152,10 @@ func (c *config) execute(ctx context.Context, rq runRequest, onChunk func(stream
 	// MXC enforces filesystem and network policy and a wall-clock timeout. It
 	// does not cap CPU, memory, file size or open files, so the service adds
 	// the limits it can with ulimit (macOS ignores some, e.g. -v).
-	cmd := fmt.Sprintf("ulimit -t %d -f %d -n %d 2>/dev/null; exec %s %s%s",
+	//
+	// One ulimit per option: POSIX shells such as dash accept only one, and a
+	// combined call would fail silently and leave the process unlimited.
+	cmd := fmt.Sprintf("ulimit -t %d 2>/dev/null; ulimit -f %d 2>/dev/null; ulimit -n %d 2>/dev/null; exec %s %s%s",
 		c.cpuSeconds, c.fileSizeKB*2, c.maxOpenFiles, interp.command, interp.args, interp.file)
 
 	req := mxc.Request{
