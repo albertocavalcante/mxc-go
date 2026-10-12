@@ -1,0 +1,58 @@
+output:
+  - meta
+  - summary
+  - success
+
+pre-commit:
+  parallel: true
+  commands:
+    go-fmt:
+      glob: "*.go"
+      run: just fmt-check
+      fail_text: "Run 'just fmt' before committing"
+
+    go-vet:
+      glob: "*.go"
+      run: just vet
+      fail_text: "Fix go vet findings before committing"
+
+    go-lint:
+      glob: "{*.go,.golangci.toml}"
+      run: just lint
+      fail_text: "Fix lint findings before committing"
+
+    go-mod-tidy:
+      glob: "{go.mod,go.sum,*.go}"
+      run: |
+        go mod tidy
+        git diff --exit-code -- go.mod
+        test ! -f go.sum || git diff --exit-code -- go.sum
+      fail_text: "go.mod and go.sum must already be tidy"
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: |
+        first_line="$(sed -n '1p' "{1}")"
+        case "$first_line" in
+          Merge\ *|Revert\ *|fixup!\ *|squash!\ *) exit 0 ;;
+        esac
+        printf '%s\n' "$first_line" |
+          grep -Eq '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9._/-]+\))?!?: .+' || {
+            printf '%s\n' "commit message must follow Conventional Commits, e.g. feat(run): add PTY support" >&2
+            exit 1
+          }
+
+    subject-length:
+      run: |
+        first_line="$(sed -n '1p' "{1}")"
+        test "${#first_line}" -le 72 || {
+          printf '%s\n' "commit subject must be at most 72 characters" >&2
+          exit 1
+        }
+
+pre-push:
+  commands:
+    test:
+      run: just test-race
+      fail_text: "Race-enabled tests must pass before pushing"
