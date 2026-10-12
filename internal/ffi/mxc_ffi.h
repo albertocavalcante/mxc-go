@@ -81,4 +81,10 @@ int32_t mxc_telemetry_get_consent_status(char **out);
 int32_t mxc_telemetry_withdraw_consent(char **out);
 int32_t mxc_telemetry_get_policy(char **out);
 int32_t mxc_telemetry_needs_consent_prompt(int32_t *out);
+
+// Host callback invoked synchronously with the canonical consent prompt JSON.
+// Returns 0 (no), 1 (yes), 2 (dismissed) or -1 (presenter error). It must not
+// unwind across the boundary.
+typedef int32_t (*MxcTelemetryConsentPresenter)(const char *prompt_json_utf8, void *context);
+int32_t mxc_telemetry_request_consent(const char *locale_utf8, MxcTelemetryConsentPresenter presenter, void *context, char **out);
 #endif

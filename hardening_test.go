@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -241,5 +242,31 @@ func TestHardening_GoroutineLeak(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 		_, _ = Run(ctx, sh("sleep 5"))
 		cancel()
+	}
+}
+
+func TestHardening_RequestConsentNotApplicableOffWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows may prompt")
+	}
+	called := false
+	out, err := RequestConsent("en-US", func(ConsentPrompt) (ConsentDecision, error) {
+		called = true
+		return ConsentNo, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("presenter must not run on a host where consent is not applicable")
+	}
+	if !json.Valid(out) || !strings.Contains(string(out), "notApplicable") {
+		t.Fatalf("outcome=%s", out)
+	}
+	if needs, err := TelemetryNeedsConsentPrompt(); err != nil || needs {
+		t.Fatalf("needs=%v err=%v", needs, err)
+	}
+	if _, err := RequestConsent("", nil); err == nil {
+		t.Fatal("nil presenter must error")
 	}
 }
