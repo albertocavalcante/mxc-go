@@ -51,9 +51,8 @@ type RunResult struct {
 	WarningsJSON   string
 }
 
-// Note: mxc_ffi exposes stdout/stderr as NUL-terminated C strings with no
-// length, so output from the one-shot (RunJSON) path is truncated at the first
-// NUL byte. Use Spawn/Output (length-aware streams) for binary-safe capture.
+// Note: mxc_ffi already decoded one-shot (RunJSON) output lossily: invalid UTF-8
+// and NUL bytes arrive as U+FFFD. Use Spawn (length-aware streams) for raw bytes.
 func runResultFrom(st C.int32_t, out *C.MxcRunResult) RunResult {
 	r := RunResult{Status: int(st), ExitCode: int(out.exit_code), TimedOut: out.timed_out != 0}
 	if out.stdout_utf8 != nil {
