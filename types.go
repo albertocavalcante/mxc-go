@@ -2,6 +2,7 @@ package mxc
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -64,6 +65,9 @@ type Workload struct {
 	Timeout time.Duration
 }
 
+// MaxTimeoutMillis is the largest Workload.Timeout the request schema accepts.
+const MaxTimeoutMillis = 4294967295
+
 func (p Workload) MarshalJSON() ([]byte, error) {
 	w := struct {
 		CommandLine       string    `json:"commandLine"`
@@ -79,6 +83,9 @@ func (p Workload) MarshalJSON() ([]byte, error) {
 		ms := p.Timeout.Milliseconds()
 		if ms == 0 {
 			ms = 1
+		}
+		if ms > MaxTimeoutMillis {
+			return nil, fmt.Errorf("mxc: workload timeout %v exceeds the schema maximum of %d ms", p.Timeout, int64(MaxTimeoutMillis))
 		}
 		w.Timeout = &ms
 	}

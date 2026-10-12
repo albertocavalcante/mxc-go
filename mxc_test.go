@@ -274,3 +274,89 @@ func asErr(err error, target **Error) bool {
 	}
 	return ok
 }
+
+func TestRunCancellableCtxClosesStdin(t *testing.T) {
+	needSandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	res, err := Run(ctx, sh("cat; echo done"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("Run hung %v (stdin not closed)", time.Since(start))
+	}
+	if !strings.Contains(string(res.Stdout), "done") {
+		t.Fatalf("stdout=%q", res.Stdout)
+	}
+}
+
+func TestCloseWithBlockedStdinWrite(t *testing.T) {
+	needSandbox(t)
+	p, err := Spawn(context.Background(), sh("sleep 30"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = p.Stdin().Write(make([]byte, 10<<20)) }()
+	time.Sleep(300 * time.Millisecond)
+	done := make(chan struct{})
+	go func() { _ = p.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close hung behind blocked stdin Write")
+	}
+}
+
+func TestOutputBoundedByGrandchild(t *testing.T) {
+	needSandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	start := time.Now()
+	res, err := Run(ctx, sh("(sleep 6 &); echo hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 4*time.Second {
+		t.Fatalf("Run took %v waiting for grandchild", d)
+	}
+	if !strings.Contains(string(res.Stdout), "hi") {
+		t.Fatalf("stdout=%q", res.Stdout)
+	}
+}
+
+func TestWaitReturnsCopy(t *testing.T) {
+	needSandbox(t)
+	p, err := Spawn(context.Background(), sh("true"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	a, _ := p.Wait(context.Background())
+	a.ExitCode = 99
+	b, _ := p.Wait(context.Background())
+	if b.ExitCode == 99 {
+		t.Fatal("Wait returned shared pointer")
+	}
+}
+
+func TestTimeoutRangeChecked(t *testing.T) {
+	r := Request{Process: Workload{CommandLine: "true", Timeout: 5000000 * time.Second}}
+	if _, err := r.JSON(); err == nil {
+		t.Fatal("expected error for timeout > 4294967295ms")
+	}
+}
+
+func TestLifecycleReservedKeysWin(t *testing.T) {
+	js, err := lifecycleEnvelope("provision", "", nil, map[string]json.RawMessage{
+		"phase": json.RawMessage(`"evil"`), "version": json.RawMessage(`"0"`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal([]byte(js), &m)
+	if m["phase"] != "provision" || m["version"] != SchemaVersion {
+		t.Fatalf("reserved keys overridden: %s", js)
+	}
+}

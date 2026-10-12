@@ -26,3 +26,6 @@
 // building it and pointing CGO_LDFLAGS at it. MXC's C ABI is explicitly
 // unstable; this module is tested against the commit in MXC_REF.
 package mxc
+
+// Build requirements: this package links the native libmxc_ffi through cgo, so
+// CGO_ENABLED=1 and a C toolchain are required; CGO_ENABLED=0 fails to compile.
