@@ -19,6 +19,7 @@ enable = [
   "misspell",
   "noctx",
   "prealloc",
+  "revive",
   "staticcheck",
   "unconvert",
   "unparam",
@@ -66,3 +67,25 @@ linters = ["errcheck", "unparam", "gocritic"]
 [[linters.exclusions.rules]]
 path = "internal/ffi/"
 text = "dupImport|dupSubExpr"
+
+# Ban dot imports (the Go analogue of star imports) and unexplained blank imports.
+[linters.settings.revive]
+enable-all-rules = false
+
+[[linters.settings.revive.rules]]
+name = "dot-imports"
+
+[[linters.settings.revive.rules]]
+name = "blank-imports"
+
+[[linters.settings.revive.rules]]
+name = "import-alias-naming"
+
+[[linters.settings.revive.rules]]
+name = "duplicated-imports"
+
+[formatters]
+enable = ["gofumpt", "goimports"]
+
+[formatters.settings.goimports]
+local-prefixes = ["github.com/albertocavalcante/mxc-go"]

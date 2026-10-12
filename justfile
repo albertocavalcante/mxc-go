@@ -35,10 +35,10 @@ lint:
     go tool -modfile=tools.go.mod golangci-lint run --timeout=5m
 
 fmt:
-    gofmt -w .
+    go tool -modfile=tools.go.mod golangci-lint fmt
 
 fmt-check:
-    test -z "$(gofmt -l .)"
+    go tool -modfile=tools.go.mod golangci-lint fmt --diff
 
 vet:
     go vet ./...
