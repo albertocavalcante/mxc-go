@@ -61,7 +61,7 @@ generated = "lax"
 
 [[linters.exclusions.rules]]
 path = "_test\\.go"
-linters = ["errcheck", "unparam", "gocritic"]
+linters = ["errcheck", "unparam", "gocritic", "noctx"]
 
 # cgo-generated code trips these checks on the C.* expansions.
 [[linters.exclusions.rules]]

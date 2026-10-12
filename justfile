@@ -58,7 +58,11 @@ example:
 formal:
     ./scripts/check-formal.sh
 
-ci: fmt-check vet lint test-race abi-check formal
+# Build and exercise the example programs against the real sandbox.
+smoke:
+    ./scripts/smoke-examples.sh
+
+ci: fmt-check vet lint test-race abi-check formal smoke
 
 # Point git at the repo's hooks (lefthook).
 hooks:
