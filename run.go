@@ -52,8 +52,10 @@ type Result struct {
 }
 
 func newError(status int, d ffi.Detail) *Error {
-	return &Error{Code: Code(status), Message: d.Message, Operation: d.Operation,
-		NativeCode: d.NativeCode, Remediation: d.Remediation}
+	return &Error{
+		Code: Code(status), Message: d.Message, Operation: d.Operation,
+		NativeCode: d.NativeCode, Remediation: d.Remediation,
+	}
 }
 
 func resultFrom(r ffi.RunResult) (*Result, error) {

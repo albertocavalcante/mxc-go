@@ -120,10 +120,12 @@ func StateAwareJSON(req string, dryRun, experimental bool) (resp string, status 
 }
 
 // Sandbox is a live process handle. Callers must serialize all calls on it.
-type Sandbox struct{ p *C.MxcSandbox }
-type ReadStream struct{ p *C.MxcReadStream }
-type WriteStream struct{ p *C.MxcWriteStream }
-type Closer struct{ p *C.MxcStreamCloser }
+type (
+	Sandbox     struct{ p *C.MxcSandbox }
+	ReadStream  struct{ p *C.MxcReadStream }
+	WriteStream struct{ p *C.MxcWriteStream }
+	Closer      struct{ p *C.MxcStreamCloser }
+)
 
 func spawnWith(f func(req *C.char, h **C.MxcSandbox, e *C.MxcErrorDetail) C.int32_t, req string) (*Sandbox, int, Detail) {
 	c := C.CString(req)
@@ -201,24 +203,28 @@ func (s *Sandbox) TakeStdin() *WriteStream {
 	}
 	return nil
 }
+
 func (s *Sandbox) TakeStdout() *ReadStream {
 	if p := C.mxc_sandbox_take_stdout(s.p); p != nil {
 		return &ReadStream{p}
 	}
 	return nil
 }
+
 func (s *Sandbox) TakeStderr() *ReadStream {
 	if p := C.mxc_sandbox_take_stderr(s.p); p != nil {
 		return &ReadStream{p}
 	}
 	return nil
 }
+
 func (s *Sandbox) StdoutCloser() *Closer {
 	if p := C.mxc_sandbox_stdout_closer(s.p); p != nil {
 		return &Closer{p}
 	}
 	return nil
 }
+
 func (s *Sandbox) StderrCloser() *Closer {
 	if p := C.mxc_sandbox_stderr_closer(s.p); p != nil {
 		return &Closer{p}
@@ -260,15 +266,19 @@ func telemetry(f func(**C.char) C.int32_t) (resp string, status int) {
 	st := f(&o)
 	return ownedString(o), int(st)
 }
+
 func TelemetryConsent() (resp string, status int) {
 	return telemetry(func(o **C.char) C.int32_t { return C.mxc_telemetry_get_consent(o) })
 }
+
 func TelemetryConsentStatus() (resp string, status int) {
 	return telemetry(func(o **C.char) C.int32_t { return C.mxc_telemetry_get_consent_status(o) })
 }
+
 func TelemetryPolicy() (resp string, status int) {
 	return telemetry(func(o **C.char) C.int32_t { return C.mxc_telemetry_get_policy(o) })
 }
+
 func TelemetryWithdraw() (resp string, status int) {
 	return telemetry(func(o **C.char) C.int32_t { return C.mxc_telemetry_withdraw_consent(o) })
 }

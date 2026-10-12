@@ -350,7 +350,8 @@ func TestTimeoutRangeChecked(t *testing.T) {
 
 func TestLifecycleReservedKeysWin(t *testing.T) {
 	js, err := lifecycleEnvelope("provision", "", nil, map[string]json.RawMessage{
-		"phase": json.RawMessage(`"evil"`), "version": json.RawMessage(`"0"`)})
+		"phase": json.RawMessage(`"evil"`), "version": json.RawMessage(`"0"`),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
