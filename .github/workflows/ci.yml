@@ -18,9 +18,7 @@ jobs:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # macOS exercises a real Seatbelt sandbox. Linux builds and runs the suite,
-    # but sandbox tests skip when the runner lacks user namespaces.
-    continue-on-error: ${{ matrix.os != 'macos-latest' }}
+    # macOS exercises a real Seatbelt sandbox, Linux a real Bubblewrap sandbox.
     strategy:
       fail-fast: false
       matrix:

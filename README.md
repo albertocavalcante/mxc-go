@@ -108,9 +108,9 @@ slice sends an explicitly empty environment.
 
 | Platform | Backend | Status |
 |---|---|---|
-| macOS (arm64) | Seatbelt | Tested: run, filesystem enforcement, timeout, streaming, cancel, PTY |
-| Linux | Bubblewrap, LXC | Untested; builds in CI on a best-effort basis |
-| Windows | ProcessContainer, WSLC, ... | Untested (the cgo and lifecycle paths are written but unverified) |
+| macOS (arm64) | Seatbelt | Tested locally and in CI: run, filesystem and network enforcement, timeout, streaming, cancel, PTY |
+| Linux (x64) | Bubblewrap | Tested in CI on `ubuntu-latest` (needs `bwrap` and unprivileged user namespaces) |
+| Windows | ProcessContainer, WSLC, ... | Not tested (the cgo path needs a MinGW/MSVC import-library story); use the Java binding to exercise `mxc_ffi.dll` |
 
 Availability always depends on the host; use `PlatformSupportInfo()` and
 `AvailableBackends()` to check at runtime.
