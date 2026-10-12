@@ -54,7 +54,11 @@ abi-check:
 example:
     go run ./examples/hello
 
-ci: fmt-check vet lint test-race abi-check
+# Model-check formal/ProcessHandle.tla with TLC (needs Java 11+).
+formal:
+    ./scripts/check-formal.sh
+
+ci: fmt-check vet lint test-race abi-check formal
 
 # Point git at the repo's hooks (lefthook).
 hooks:

@@ -8,6 +8,12 @@ commit it was tested against.
 
 ## Unreleased
 
+- Telemetry consent flow: `TelemetryNeedsConsentPrompt` and `RequestConsent` with a
+  panic-safe presenter callback.
+- A finalizer reclaims a `Process` that is dropped without `Close`.
+- TLA+ model of the close protocol, a typed-request property test, and
+  `gofumpt`/`goimports`/`revive` formatting and import rules.
+
 Initial implementation, tested against MXC `c6f301d` (see `MXC_REF`):
 
 - Typed `1.0.0` request model, `Run`/`RunJSON`, `Spawn`/`SpawnJSON`, `SpawnPTY`.

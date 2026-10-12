@@ -37,7 +37,9 @@ fmt.Printf("exit=%d stdout=%q\n", res.ExitCode, res.Stdout)
 - `context.Context` support: cancellation kills the sandboxed process tree.
 - Persistent-container lifecycle: `Provision`, `Start`, `Exec`, `SpawnExec`,
   `Stop`, `Deprovision`, `Validate` (WSLC and IsolationSession; Windows hosts).
-- Backend discovery, telemetry consent, and structured errors.
+- Backend discovery, telemetry consent (including the `RequestConsent` prompt
+  flow with a panic-safe callback), and structured errors.
+- A forgotten `Close` is not fatal: a finalizer reclaims the process.
 - Concurrency-safe: native calls on a process handle are serialized, and
   `Wait`/`Output` follow MXC's rule of polling and killing from one call.
 
@@ -89,6 +91,19 @@ _, err := mxc.Run(ctx, req) // context.DeadlineExceeded; the sandbox is killed
 `Workload.Env == nil` selects the backend's default environment; a non-nil empty
 slice sends an explicitly empty environment.
 
+## Behavior notes
+
+- `Run` output is decoded lossily by the native layer (invalid UTF-8 and NUL
+  become U+FFFD). Use `Spawn` and read the pipes for raw bytes.
+- `Result.ExitCode` is `-1` when the workload did not exit normally (timeout or
+  killed by a signal).
+- Closing a PTY process's stdin sends the terminal EOF character, which the
+  terminal echoes as `^D`. `Output` closes stdin first, so PTY output from
+  `Output` may begin with it.
+- Cross-field rules (an ICMP rule has no port, an `except` CIDR lies inside its
+  `cidr`, ...) are enforced by MXC natively and surface as a `malformed_request`
+  or `policy_validation` error rather than being duplicated here.
+
 ## Platform support
 
 | Platform | Backend | Status |
@@ -99,6 +114,19 @@ slice sends an explicitly empty environment.
 
 Availability always depends on the host; use `PlatformSupportInfo()` and
 `AvailableBackends()` to check at runtime.
+
+## Verification
+
+Beyond unit and race-detector tests:
+
+- **TLA+ model** of the process close protocol ([`formal/`](formal/README.md)),
+  checked exhaustively with TLC in CI. It proves the shipped design free of
+  use-after-free, double-free, leaks and deadlock, and it reproduces the original
+  deadlock (asserted, so the model cannot go vacuous).
+- **Property test** (`property_test.go`): random requests built through the
+  typed API are never rejected by MXC's strict contract parser as malformed.
+- **ABI check**: every C function this module declares must be exported by the
+  pinned native library.
 
 ## Stability
 
@@ -112,11 +140,12 @@ This module is v0.x: the API may change before v1.0.
 ## Development
 
 ```sh
-just native && just ci      # fmt-check, vet, golangci-lint, race tests, ABI check
+just native && just ci      # fmt-check, vet, golangci-lint, race tests, ABI check, TLA+ model
 just hooks                  # install lefthook git hooks
 ```
 
-Commits must follow [Conventional Commits](https://www.conventionalcommits.org/)
+Formatting is `gofumpt` + `goimports` (local prefix grouped last); dot and blank
+imports are banned by `revive`. Commits must follow [Conventional Commits](https://www.conventionalcommits.org/)
 with a subject of at most 72 characters (enforced by the `commit-msg` hook and
 in CI). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
